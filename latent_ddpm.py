@@ -127,7 +127,7 @@ if __name__ == "__main__":
     
     # Model/sample paths
     parser.add_argument('--vae-model', type=str, default='checkpoints/beta_vae.pt', help='file to save/load VAE model (default: %(default)s)')
-    parser.add_argument('--model', type=str, default='models/latent_ddpm.pt', help='file to save/load DDPM model (default: %(default)s)')
+    parser.add_argument('--model', type=str, default='checkpoints/latent_ddpm.pt', help='file to save/load DDPM model (default: %(default)s)')
     parser.add_argument('--samples', type=str, default='samples/latent_samples.png', help='file to save samples in (default: %(default)s)')
     
     # Standard hyperparameters
