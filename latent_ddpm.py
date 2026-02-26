@@ -2,13 +2,17 @@ import torch
 import torch.nn as nn
 import torch.distributions as td
 import torch.utils.data
-from torchvision import datasets, transforms
 from torchvision.utils import save_image
 from tqdm import tqdm
 import argparse
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import time
+
+# --- NEW IMPORTS ---
+from fid import compute_fid
+from data_utils import get_mnist_dataloaders
 
 # 1. BETA-VAE MODULES
 class GaussianEncoder(nn.Module):
@@ -122,7 +126,7 @@ class LatentDDPM(nn.Module):
 # 3. MAIN RUN
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('mode', type=str, default='train_ddpm', choices=['train_vae', 'train_ddpm', 'sample'], help='what to do when running the script (default: %(default)s)')
+    parser.add_argument('--mode', type=str, default='train_ddpm', choices=['train_vae', 'train_ddpm', 'sample'], help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--data', type=str, default='mnist', choices=['mnist'], help='dataset to use (default: %(default)s)')
     
     # Model/sample paths
@@ -154,16 +158,12 @@ if __name__ == "__main__":
 
     # 1. GENERATE THE DATA
     if args.data == 'mnist':
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x + torch.rand(x.shape) / 255), # Dequantize
-            transforms.Lambda(lambda x: (x - 0.5) * 2.0),               # Map to [-1, 1]
-            transforms.Lambda(lambda x: x.flatten())
-        ])
-        
-        train_data = datasets.MNIST('data/', train=True, download=True, transform=transform)
-        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
-        
+        print("Loading MNIST (Continuous, Flatten=True)...")
+        train_loader, test_loader = get_mnist_dataloaders(
+            batch_size=args.batch_size, 
+            binarize=False, 
+            flatten=True
+        )
         D = 784             # 28x28 flattened
 
     # 2. DEFINE THE NETWORK AND MODEL
@@ -233,15 +233,38 @@ if __name__ == "__main__":
 
         print(f"\nSampling (saving to {args.samples})...")
         with torch.no_grad():
+            # Start timer
+            start_time = time.time()
+            
             # 1. Generate new latents via DDPM
             sampled_z = ddpm.sample((64, M))
             
             # 2. Decode latents into images
             sampled_images = vae.decoder(sampled_z).mean 
             
-            # 3. Reshape and un-normalize [-1, 1] -> [0, 1]
-            sampled_images = sampled_images / 2 + 0.5
-            sampled_images = sampled_images.view(64, 1, 28, 28)
+            # End timer
+            sampling_time = time.time() - start_time
+            print(f"Sampling 64 images took: {sampling_time:.4f} seconds ({64/sampling_time:.2f} samples/sec)")
             
-            save_image(sampled_images, args.samples, nrow=8)
+            # 3. Reshape generated images to (64, 1, 28, 28)
+            # Note: We keep them in the [-1, 1] range for the FID calculation
+            sampled_images_fid = sampled_images.view(64, 1, 28, 28)
+            
+            # 4. Get a batch of real images from the test loader for comparison
+            x_real, _ = next(iter(test_loader))
+            x_real = x_real[:64].view(64, 1, 28, 28).to(args.device)
+            
+            print("\nComputing Frechet Inception Distance on Test Set...")
+            # 5. Compute FID using [-1, 1] images
+            fid = compute_fid(
+                x_real=x_real, 
+                x_gen=sampled_images_fid, 
+                device=args.device, 
+                classifier_ckpt="checkpoints/mnist_classifier.pth"
+            )
+            print(f"FID = {np.real(fid):.4f}")
+
+            # 6. Un-normalize [-1, 1] -> [0, 1] purely for saving the visualization
+            sampled_images_save = sampled_images_fid / 2.0 + 0.5
+            save_image(sampled_images_save, args.samples, nrow=8)
             print(f"Saved {args.samples}")

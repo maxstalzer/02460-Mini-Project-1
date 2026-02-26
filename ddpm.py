@@ -6,7 +6,15 @@ import torch.nn as nn
 import torch.distributions as td
 import torch.nn.functional as F
 from tqdm import tqdm
+import argparse
+import numpy as np
+import time
+from torchvision.utils import save_image
 
+# --- NEW IMPORTS ---
+from fid import compute_fid
+from data_utils import get_mnist_dataloaders
+from unet import Unet
 
 class DDPM(nn.Module):
     def __init__(self, network, beta_1=1e-4, beta_T=2e-2, T=100):
@@ -48,6 +56,7 @@ class DDPM(nn.Module):
         epsilon_theta = self.network(x_t, t_input)
 
         # Calculate the squared error ||epsilon - epsilon_theta||^2
+        # Since x is always flattened to 2D [batch, 784], we just sum over dim=1
         neg_elbo = torch.sum((epsilon - epsilon_theta) ** 2, dim=1)
 
         return neg_elbo
@@ -72,7 +81,11 @@ class DDPM(nn.Module):
             else:
                 z = torch.zeros_like(x_t)
 
-            x_t = (1/torch.sqrt(self.alpha[t])) * (x_t - (1 - self.alpha[t])/torch.sqrt(1 - self.alpha_cumprod[t])*epsilon_theta) + torch.sqrt(self.beta[t])*z
+            alpha_t = self.alpha[t]
+            alpha_cumprod_t = self.alpha_cumprod[t]
+            beta_t = self.beta[t]
+
+            x_t = (1/torch.sqrt(alpha_t)) * (x_t - (1 - alpha_t)/torch.sqrt(1 - alpha_cumprod_t)*epsilon_theta) + torch.sqrt(beta_t)*z
 
         return x_t
 
@@ -127,25 +140,13 @@ class FcNetwork(nn.Module):
 
 
 if __name__ == "__main__":
-    import torch.utils.data
-    from torchvision import datasets, transforms
-    from torchvision.utils import save_image
-    import ToyData
-    import argparse
-    import matplotlib.pyplot as plt
-    import numpy as np
-    
-    # Import your new Unet class
-    from unet import Unet
-
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample', 'test'], help='what to do when running the script (default: %(default)s)')
-    parser.add_argument('--data', type=str, default='tg', choices=['tg', 'cb', 'mnist'], help='dataset to use (default: %(default)s)')
     parser.add_argument('--network', type=str, default='fc', choices=['fc', 'unet'], help='network architecture to use (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
     parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
-    parser.add_argument('--batch-size', type=int, default=10000, metavar='N', help='batch size for training (default: %(default)s)')
+    parser.add_argument('--batch-size', type=int, default=128, metavar='N', help='batch size for training (default: %(default)s)')
     parser.add_argument('--epochs', type=int, default=1, metavar='N', help='number of epochs to train (default: %(default)s)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='V', help='learning rate for training (default: %(default)s)')
 
@@ -154,42 +155,28 @@ if __name__ == "__main__":
     for key, value in sorted(vars(args).items()):
         print(key, '=', value)
 
-    # 1. GENERATE THE DATA
-    if args.data == 'mnist':
-        if args.batch_size == 10000:
-            print("\nWARNING: Batch size 10000 is too large for MNIST. Defaulting to 128 to prevent OOM errors.\n")
-            args.batch_size = 128
-
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x + torch.rand(x.shape) / 255),
-            transforms.Lambda(lambda x: (x - 0.5) * 2.0),
-            transforms.Lambda(lambda x: x.flatten())
-        ])
-        
-        train_data = datasets.MNIST('data/', train=True, download=True, transform=transform)
-        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
-        
-        D = 784 
-        num_hidden = 512 
-    else:
-        n_data = 10000000
-        toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
-        transform = lambda x: (x-0.5)*2.0
-        train_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
-        
-        D = next(iter(train_loader)).shape[1]
-        num_hidden = 64
-
-    # 2. DEFINE THE NETWORK AND MODEL
+    # 1. DEFINE THE NETWORK AND SAMPLE SHAPE
     if args.network == 'unet':
-        if args.data != 'mnist':
-            raise ValueError("The provided Unet is hardcoded for 28x28 MNIST images. Please use --data mnist.")
         print("Using U-Net Architecture...")
         network = Unet()
+        flatten = True
+        sample_shape = (64, 784)
     else:
         print("Using Fully Connected Architecture...")
+        D = 784 
+        num_hidden = 512 
         network = FcNetwork(D, num_hidden)
+        flatten = True
+        sample_shape = (64, D)
+
+    # 2. GENERATE THE DATA
+    # Binarize is False because we are training on standard MNIST
+    print(f"Loading MNIST (Flatten={flatten})...")
+    train_loader, test_loader = get_mnist_dataloaders(
+        batch_size=args.batch_size, 
+        binarize=False, 
+        flatten=flatten
+    )
         
     T = 1000
     model = DDPM(network, T=T).to(args.device)
@@ -199,34 +186,45 @@ if __name__ == "__main__":
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         train(model, optimizer, train_loader, args.epochs, args.device)
         torch.save(model.state_dict(), args.model)
+        print(f"Model saved to {args.model}")
 
     elif args.mode == 'sample':
         model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
         model.eval()
 
-        if args.data == 'mnist':
-            with torch.no_grad():
-                samples = model.sample((64, D)).cpu()
+        print(f"\nSampling (saving to {args.samples})...")
+        with torch.no_grad():
+            # Start timer for wall-clock sampling time 
+            start_time = time.time()
             
-            samples = samples / 2 + 0.5
-            samples = samples.view(-1, 1, 28, 28)
-            save_image(samples, args.samples, nrow=8)
+            # Generate latents/images via DDPM
+            samples = model.sample(sample_shape)
+            
+            # End timer
+            sampling_time = time.time() - start_time
+            print(f"Sampling 64 images took: {sampling_time:.4f} seconds ({64/sampling_time:.2f} samples/sec)")
+            
+            # Keep samples in [-1, 1] range for FID calculation
+            samples_fid = samples.view(64, 1, 28, 28).to(args.device)
+            
+            # Un-normalize [-1, 1] -> [0, 1] purely for saving the visualization
+            samples_save = samples_fid / 2.0 + 0.5
+            save_image(samples_save, args.samples, nrow=8)
             print(f"Saved MNIST samples grid to {args.samples}")
 
-        else:
-            with torch.no_grad():
-                samples = (model.sample((10000, D))).cpu() 
-
-            samples = samples / 2 + 0.5
-            coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-            prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
-
-            fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-            im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-            ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-            ax.set_xlim(toy.xlim)
-            ax.set_ylim(toy.ylim)
-            ax.set_aspect('equal')
-            fig.colorbar(im)
-            plt.savefig(args.samples)
-            plt.close()
+            # --- FID CALCULATION ON TEST SET ---
+            print("\nComputing Frechet Inception Distance on Test Set...")
+            # Get a batch of real images from the test loader
+            x_real, _ = next(iter(test_loader))
+            
+            # Reshape real images to ensure they match (64, 1, 28, 28) regardless of FC or U-Net
+            x_real_fid = x_real[:64].view(64, 1, 28, 28).to(args.device)
+            
+            # Compute FID using [-1, 1] images 
+            fid = compute_fid(
+                x_real=x_real_fid, 
+                x_gen=samples_fid, 
+                device=args.device, 
+                classifier_ckpt="checkpoints/mnist_classifier.pth"
+            )
+            print(f"FID = {np.real(fid):.4f}")
