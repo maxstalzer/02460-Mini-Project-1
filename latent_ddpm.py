@@ -9,12 +9,12 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+from sklearn.decomposition import PCA
 
-# --- NEW IMPORTS ---
 from fid import compute_fid
 from data_utils import get_mnist_dataloaders
 
-# 1. BETA-VAE MODULES
+# BETA-VAE MODULES
 class GaussianEncoder(nn.Module):
     def __init__(self, encoder_net):
         super(GaussianEncoder, self).__init__()
@@ -45,11 +45,11 @@ class BetaVAE(nn.Module):
         self.latent_dim = None # Will be inferred
 
     def elbo(self, x):
-        # 1. Encode
+        # Encode
         q = self.encoder(x)
         z = q.rsample()
 
-        # 2. Standard Normal Prior p(z) ~ N(0, I)
+        # Standard Normal Prior p(z) ~ N(0, I)
         if self.latent_dim is None:
             self.latent_dim = z.shape[-1]
         prior = td.Independent(td.Normal(
@@ -57,10 +57,10 @@ class BetaVAE(nn.Module):
             scale=torch.ones_like(z)
         ), 1)
 
-        # 3. KL Divergence: D_KL(q(z|x) || p(z))
+        # KL Divergence: D_KL(q(z|x) || p(z))
         kl = td.kl_divergence(q, prior)
         
-        # 4. Reconstruction Log-Likelihood: log p(x|z)
+        # Reconstruction Log-Likelihood: log p(x|z)
         recon_loss = self.decoder(z).log_prob(x)
         
         # Beta-ELBO
@@ -70,7 +70,7 @@ class BetaVAE(nn.Module):
         return -self.elbo(x)
 
 
-# 2. DDPM MODULES (Operating on Latent Z)
+# DDPM MODULES (Operating on Latent Z)
 class FcNetwork(nn.Module):
     def __init__(self, input_dim, num_hidden=256):
         super(FcNetwork, self).__init__()
@@ -123,7 +123,7 @@ class LatentDDPM(nn.Module):
             z_t = (1/torch.sqrt(self.alpha[t])) * (z_t - (1 - self.alpha[t])/torch.sqrt(1 - self.alpha_cumprod[t])*epsilon_theta) + torch.sqrt(self.beta[t])*z
         return z_t
 
-# 3. MAIN RUN
+# Main Run
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', type=str, default='train_ddpm', choices=['train_vae', 'train_ddpm', 'sample'], help='what to do when running the script (default: %(default)s)')
@@ -156,7 +156,7 @@ if __name__ == "__main__":
         if dir_name:  # Only create if there's an actual directory in the path
             os.makedirs(dir_name, exist_ok=True)
 
-    # 1. GENERATE THE DATA
+    # Generate data
     if args.data == 'mnist':
         print("Loading MNIST (Continuous, Flatten=True)...")
         train_loader, test_loader = get_mnist_dataloaders(
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         )
         D = 784             # 28x28 flattened
 
-    # 2. DEFINE THE NETWORK AND MODEL
+    # Define the network and model
     M = args.latent_dim
     encoder_net = nn.Sequential(
         nn.Linear(D, 512), nn.ReLU(),
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     T = 1000
     ddpm = LatentDDPM(network, T=T).to(args.device)
 
-    # 3. CHOOSE MODE TO RUN
+    # Choose mode to run
     if args.mode == 'train_vae':
         optimizer = torch.optim.Adam(vae.parameters(), lr=args.lr)
         vae.train()
@@ -226,6 +226,7 @@ if __name__ == "__main__":
         print(f"Saved {args.model}")
 
     elif args.mode == 'sample':
+        
         vae.load_state_dict(torch.load(args.vae_model, map_location=args.device))
         ddpm.load_state_dict(torch.load(args.model, map_location=args.device))
         vae.eval()
@@ -236,26 +237,60 @@ if __name__ == "__main__":
             # Start timer
             start_time = time.time()
             
-            # 1. Generate new latents via DDPM
+            # Generate new latents via DDPM
             sampled_z = ddpm.sample((64, M))
-            
-            # 2. Decode latents into images
+
+            # Decode latents into images
             sampled_images = vae.decoder(sampled_z).mean 
             
             # End timer
             sampling_time = time.time() - start_time
             print(f"Sampling 64 images took: {sampling_time:.4f} seconds ({64/sampling_time:.2f} samples/sec)")
-            
-            # 3. Reshape generated images to (64, 1, 28, 28)
-            # Note: We keep them in the [-1, 1] range for the FID calculation
-            sampled_images_fid = sampled_images.view(64, 1, 28, 28)
-            
-            # 4. Get a batch of real images from the test loader for comparison
+
+            # Get a batch of real images from the test loader
             x_real, _ = next(iter(test_loader))
             x_real = x_real[:64].view(64, 1, 28, 28).to(args.device)
+
+            # PLOT LATENT DISTRIBUTIONS
+            print("\nGenerating Latent Space PCA Plot (1000 samples)...")
+
+            # 1. Get Learned DDPM Distribution (Sample 1000 latents just for the plot)
+            z_ddpm = ddpm.sample((500, M)).cpu().numpy()
+
+            # 2. Get Aggregate Posterior (Grab a fresh batch of 1000 real images)
+            x_real_large, _ = next(iter(torch.utils.data.DataLoader(test_loader.dataset, batch_size=500, shuffle=True)))
+            z_posterior = vae.encoder(x_real_large.view(500, -1).to(args.device)).rsample().cpu().numpy()
+
+            # 3. Get VAE Prior 
+            z_prior = np.random.randn(500, M)
+
+            # Fit PCA on the posterior 
+            pca = PCA(n_components=2)
+            pca.fit(z_posterior)
+            
+            z_posterior_2d = pca.transform(z_posterior)
+            z_ddpm_2d = pca.transform(z_ddpm)
+            z_prior_2d = pca.transform(z_prior)
+
+            # Plotting (using raw strings r'' to fix SyntaxWarning)
+            plt.figure(figsize=(8, 6))
+            plt.scatter(z_prior_2d[:, 0], z_prior_2d[:, 1], alpha=0.5, label=r'β-VAE Prior $\mathcal{N}(0, I)$', s=15, c='red', marker='x')
+            plt.scatter(z_posterior_2d[:, 0], z_posterior_2d[:, 1], alpha=0.5, label=r'Aggregate Posterior $q(z|x)$', s=15, c='blue', marker='o')
+            plt.scatter(z_ddpm_2d[:, 0], z_ddpm_2d[:, 1], alpha=0.5, label=r'Latent DDPM $p_\theta(z)$', s=15, c='green', marker='s')
+            
+            plt.title(f"Latent Space Distributions (PCA) | β = {args.beta}")
+            plt.legend()
+            
+            # Save the plot dynamically based on the beta value
+            plot_path = args.samples.replace('.png', '_pca.png')
+            plt.savefig(plot_path)
+            print(f"Saved latent space plot to {plot_path}")
+            
+            # Reshape generated images to (64, 1, 28, 28)
+            sampled_images_fid = sampled_images.view(64, 1, 28, 28)
             
             print("\nComputing Frechet Inception Distance on Test Set...")
-            # 5. Compute FID using [-1, 1] images
+            # Compute FID using [-1, 1] images
             fid = compute_fid(
                 x_real=x_real, 
                 x_gen=sampled_images_fid, 
@@ -264,7 +299,7 @@ if __name__ == "__main__":
             )
             print(f"FID = {np.real(fid):.4f}")
 
-            # 6. Un-normalize [-1, 1] -> [0, 1] purely for saving the visualization
+            # Un-normalize [-1, 1] -> [0, 1] purely for saving the visualization
             sampled_images_save = sampled_images_fid / 2.0 + 0.5
             save_image(sampled_images_save, args.samples, nrow=8)
             print(f"Saved {args.samples}")
