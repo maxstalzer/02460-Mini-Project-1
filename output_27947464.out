@@ -1,0 +1,268 @@
+==========================================================
+Starting Mini-Project 1 Pipeline
+==========================================================
+\n--- 1. U-Net DDPM ---
+Training U-Net DDPM...
+# Options
+batch_size = 128
+device = cuda
+epochs = 50
+lr = 0.001
+mode = train
+model = checkpoints/unet_ddpm.pt
+network = unet
+samples = samples.png
+Using U-Net Architecture...
+Loading MNIST (Flatten=True)...
+Model saved to checkpoints/unet_ddpm.pt
+Sampling U-Net DDPM (Computes Wall-clock time & FID)...
+# Options
+batch_size = 128
+device = cuda
+epochs = 1
+lr = 0.001
+mode = sample
+model = checkpoints/unet_ddpm.pt
+network = unet
+samples = samples/unet_samples.png
+Using U-Net Architecture...
+Loading MNIST (Flatten=True)...
+
+Sampling (saving to samples/unet_samples.png)...
+Sampling 64 images took: 1.9654 seconds (32.56 samples/sec)
+Saved MNIST samples grid to samples/unet_samples.png
+
+Computing Frechet Inception Distance on Test Set...
+FID = 68.0384
+\n--- 2. Latent DDPM (Beta = 0.5) ---
+Training Beta-VAE (Beta=0.5)...
+# Options
+batch_size = 128
+beta = 0.5
+data = mnist
+device = cuda
+epochs = 50
+latent_dim = 32
+lr = 0.001
+mode = train_vae
+model = checkpoints/latent_ddpm.pt
+samples = samples/latent_samples.png
+vae_model = checkpoints/beta_vae_05.pt
+Loading MNIST (Continuous, Flatten=True)...
+
+Training Beta-VAE (saving to checkpoints/beta_vae_05.pt)...
+Saved checkpoints/beta_vae_05.pt
+Training Latent DDPM (Beta=0.5)...
+# Options
+batch_size = 128
+beta = 0.5
+data = mnist
+device = cuda
+epochs = 50
+latent_dim = 32
+lr = 0.001
+mode = train_ddpm
+model = checkpoints/latent_ddpm_05.pt
+samples = samples/latent_samples.png
+vae_model = checkpoints/beta_vae_05.pt
+Loading MNIST (Continuous, Flatten=True)...
+
+Training Latent DDPM (saving to checkpoints/latent_ddpm_05.pt)...
+Saved checkpoints/latent_ddpm_05.pt
+Sampling Latent DDPM (Beta=0.5) (Computes Wall-clock time & FID)...
+# Options
+batch_size = 128
+beta = 0.5
+data = mnist
+device = cuda
+epochs = 20
+latent_dim = 32
+lr = 0.001
+mode = sample
+model = checkpoints/latent_ddpm_05.pt
+samples = samples/latent_samples_05.png
+vae_model = checkpoints/beta_vae_05.pt
+Loading MNIST (Continuous, Flatten=True)...
+
+Sampling (saving to samples/latent_samples_05.png)...
+Sampling 64 images took: 0.5013 seconds (127.67 samples/sec)
+
+Generating Latent Space PCA Plot (1000 samples)...
+Saved latent space plot to samples/latent_samples_05_pca.png
+
+Computing Frechet Inception Distance on Test Set...
+FID = 85.5485
+Saved samples/latent_samples_05.png
+\n--- 3. Latent DDPM (Beta = 1e-6) ---
+Training Beta-VAE (Beta=1e-6)...
+# Options
+batch_size = 128
+beta = 1e-06
+data = mnist
+device = cuda
+epochs = 50
+latent_dim = 32
+lr = 0.001
+mode = train_vae
+model = checkpoints/latent_ddpm.pt
+samples = samples/latent_samples.png
+vae_model = checkpoints/beta_vae_1e6.pt
+Loading MNIST (Continuous, Flatten=True)...
+
+Training Beta-VAE (saving to checkpoints/beta_vae_1e6.pt)...
+Saved checkpoints/beta_vae_1e6.pt
+Training Latent DDPM (Beta=1e-6)...
+# Options
+batch_size = 128
+beta = 0.5
+data = mnist
+device = cuda
+epochs = 50
+latent_dim = 32
+lr = 0.001
+mode = train_ddpm
+model = checkpoints/latent_ddpm_1e6.pt
+samples = samples/latent_samples.png
+vae_model = checkpoints/beta_vae_1e6.pt
+Loading MNIST (Continuous, Flatten=True)...
+
+Training Latent DDPM (saving to checkpoints/latent_ddpm_1e6.pt)...
+Saved checkpoints/latent_ddpm_1e6.pt
+Sampling Latent DDPM (Beta=1e-6) (Computes Wall-clock time & FID)...
+# Options
+batch_size = 128
+beta = 0.5
+data = mnist
+device = cuda
+epochs = 20
+latent_dim = 32
+lr = 0.001
+mode = sample
+model = checkpoints/latent_ddpm_1e6.pt
+samples = samples/latent_samples_1e6.png
+vae_model = checkpoints/beta_vae_1e6.pt
+Loading MNIST (Continuous, Flatten=True)...
+
+Sampling (saving to samples/latent_samples_1e6.png)...
+Sampling 64 images took: 0.5108 seconds (125.28 samples/sec)
+
+Generating Latent Space PCA Plot (1000 samples)...
+Saved latent space plot to samples/latent_samples_1e6_pca.png
+
+Computing Frechet Inception Distance on Test Set...
+FID = 80.1919
+Saved samples/latent_samples_1e6.png
+\n--- 4. Bernoulli VAE with Flow Prior ---
+Training Bernoulli Flow VAE...
+Loading Binarized MNIST (Flatten=True)...
+Model saved to checkpoints/vae_flow_model.pt
+Evaluating Bernoulli Flow VAE (Computes ELBO, Wall-clock time, FID, and PCA)...
+Loading Binarized MNIST (Flatten=True)...
+Test Set ELBO: -2068.1545
+Collecting posterior samples...
+Collecting prior samples...
+Projecting to 2D (Latent Dim: 32)...
+Plot saved to posterior_prior.png
+
+Sampling and computing FID...
+Sampling 64 images took: 0.0201 seconds (3183.57 samples/sec)
+Samples saved to vae_flow_samples.png
+Computing Frechet Inception Distance...
+FID = 68.5789
+\n==========================================================
+Pipeline Complete! Check output files for FID scores and times.
+==========================================================
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@hpc.dtu.dk>
+Subject: Job 27947464: <02460_mini_project_1> in cluster <dcc> Done
+
+Job <02460_mini_project_1> was submitted from host <n-62-20-1> by user <s215141> in cluster <dcc> at Wed Mar  4 11:34:04 2026
+Job was executed on host(s) <n-62-11-16>, in queue <gpuv100>, as user <s215141> in cluster <dcc> at Wed Mar  4 11:34:04 2026
+</zhome/45/a/168203> was used as the home directory.
+</work3/s215141/02460-Mini-projects/Mini-Project-1> was used as the working directory.
+Started at Wed Mar  4 11:34:04 2026
+Terminated at Wed Mar  4 12:31:24 2026
+Results reported at Wed Mar  4 12:31:24 2026
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/sh
+#BSUB -J 02460_mini_project_1
+#BSUB -q gpuv100
+#BSUB -gpu "num=1:mode=exclusive_process"
+#BSUB -n 1
+#BSUB -R "rusage[mem=16G]"
+#BSUB -W 08:00
+#BSUB -o output_%J.out
+#BSUB -e error_%J.err
+
+echo "=========================================================="
+echo "Starting Mini-Project 1 Pipeline"
+echo "=========================================================="
+
+# 1. U-Net DDPM
+echo "\n--- 1. U-Net DDPM ---"
+echo "Training U-Net DDPM..."
+uv run ddpm.py train --network unet --model checkpoints/unet_ddpm.pt --device cuda --epochs 50 --batch-size 128
+
+echo "Sampling U-Net DDPM (Computes Wall-clock time & FID)..."
+uv run ddpm.py sample --network unet --model checkpoints/unet_ddpm.pt --samples samples/unet_samples.png --device cuda
+
+
+# 2. Latent DDPM (Beta = 0.5)
+echo "\n--- 2. Latent DDPM (Beta = 0.5) ---"
+echo "Training Beta-VAE (Beta=0.5)..."
+uv run latent_ddpm.py --mode train_vae --data mnist --vae-model checkpoints/beta_vae_05.pt --device cuda --epochs 50 --batch-size 128 --latent-dim 32 --beta 0.5
+
+echo "Training Latent DDPM (Beta=0.5)..."
+uv run latent_ddpm.py --mode train_ddpm --data mnist --vae-model checkpoints/beta_vae_05.pt --model checkpoints/latent_ddpm_05.pt --device cuda --epochs 50 --batch-size 128 --latent-dim 32
+
+echo "Sampling Latent DDPM (Beta=0.5) (Computes Wall-clock time & FID)..."
+uv run latent_ddpm.py --mode sample --data mnist --vae-model checkpoints/beta_vae_05.pt --model checkpoints/latent_ddpm_05.pt --samples samples/latent_samples_05.png --device cuda --latent-dim 32
+
+
+# 3. Latent DDPM (Beta = 10^-6)
+echo "\n--- 3. Latent DDPM (Beta = 1e-6) ---"
+echo "Training Beta-VAE (Beta=1e-6)..."
+uv run latent_ddpm.py --mode train_vae --data mnist --vae-model checkpoints/beta_vae_1e6.pt --device cuda --epochs 50 --batch-size 128 --latent-dim 32 --beta 1e-6
+
+echo "Training Latent DDPM (Beta=1e-6)..."
+uv run latent_ddpm.py --mode train_ddpm --data mnist --vae-model checkpoints/beta_vae_1e6.pt --model checkpoints/latent_ddpm_1e6.pt --device cuda --epochs 50 --batch-size 128 --latent-dim 32
+
+echo "Sampling Latent DDPM (Beta=1e-6) (Computes Wall-clock time & FID)..."
+uv run latent_ddpm.py --mode sample --data mnist --vae-model checkpoints/beta_vae_1e6.pt --model checkpoints/latent_ddpm_1e6.pt --samples samples/latent_samples_1e6.png --device cuda --latent-dim 32
+
+
+# 4. Bernoulli VAE with Flow Prior
+echo "\n--- 4. Bernoulli VAE with Flow Prior ---"
+echo "Training Bernoulli Flow VAE..."
+
+(... more ...)
+------------------------------------------------------------
+
+Successfully completed.
+
+Resource usage summary:
+
+    CPU time :                                   3283.00 sec.
+    Max Memory :                                 1082 MB
+    Average Memory :                             964.10 MB
+    Total Requested Memory :                     16384.00 MB
+    Delta Memory :                               15302.00 MB
+    Max Swap :                                   -
+    Max Processes :                              5
+    Max Threads :                                17
+    Run time :                                   3440 sec.
+    Turnaround time :                            3440 sec.
+
+The output (if any) is above this job summary.
+
+
+
+PS:
+
+Read file <error_27947464.err> for stderr output of this job.
+
